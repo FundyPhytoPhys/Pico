@@ -1,0 +1,290 @@
+---
+title: "Picocyanobacteria; Oxygen & Light"
+author:
+- Douglas A. Campbell
+- Ondrej Prasil
+- Amanda Cockshutt
+
+date: "`r format(Sys.Date())`"
+output:
+  slidy_presentation:
+    footer: "dcampbell@mta.ca; Mount Allison University; NSERC & CRC"
+    
+csl: frontiers.csl
+bibliography: ProchloroSynecho.bib
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, messages = FALSE, warnings = FALSE)
+
+library(tidyverse)
+library(ggplot2)
+library(broom)
+library(chngpt)
+library(ggpubr)
+library(glue)
+library(cowplot)
+options(kableExtra.auto_format = FALSE)
+library(kableExtra)
+
+figures <- c("figures")
+data_in <- c("data_in")
+process_data <- c("process_data")
+figures_in <- c("figure_material")
+```
+
+```{r O2 enzymes}
+# enzymes <- data.frame(enzyme = c("3-demethoxyubiquinol 3-hydroxylase","choline oxidase","cholesterol oxidase", "
+# 
+# catechol 2,3-dioxygenase","COX", "AOX", "RUBISCO", "Flv", "MOX"), KMmM = c(NA, c(0.6,703), c(0.165, 0.3), c(0.007,0.009), 2:7),  BRENDA = c(NA, "EC 1.1.3.17) ","https://www.brenda-enzymes.org/enzyme.php?ecno=1.1.3.17", "https://www.brenda-enzymes.org/enzyme.php?ecno=1.1.3.6","EC1.13.11.2"))
+```
+
+## Photosynthesis
+```{r photosynthesis, fig.align = 'centre', out.width='70%', out.height='70%'}
+knitr::include_graphics(file.path("figure_material/Photosynthesis.png"))
+```
+
+## Phytoplankton
+```{r phytoplankton, fig.align = 'centre', out.width='70%', out.height='70%'}
+knitr::include_graphics(file.path("figure_material/Phytoplankton.png"))
+```
+
+## Phytoplankton Size
+```{r phytoplankton size, fig.align = 'centre', out.width='70%', out.height='70%'}
+knitr::include_graphics(file.path("figure_material/PhytoplanktonSize.png"))
+```
+
+## Phytoplankton Ecophysiology
+```{r lab outline, fig.align = 'centre', out.width='70%', out.height='70%'}
+knitr::include_graphics(file.path("figure_material/PhytoplanktonEcophysiology.png"))
+```
+
+## PSII Photoinactivation & Prochlorococcus
+[@sixLightVariabilityIlluminates2007]
+
+
+
+## Two paths of PSII Photoinactivation
+
+[@murphyPhotoinactivationPhotosystemII2017]  
+[@soitamoPhotoinhibitionMarinePicocyanobacteria2017a]
+
+## Limited PSII Repair Capacity in Prochlorococcus
+[@sixLightVariabilityIlluminates2007]  
+[@bonisteelStrainSpecificDifferences2018]
+
+  Cockshutt et al. this conference
+  Issues with *Prochlorococcus* repair with 24H L?
+    Prochlorococcus repair in dark/low light?
+  
+## NonPhotochemical Quenching in Prochlorococcus; How?
+
+[@xuConnectivityPhotosystemII2017]  
+[@xuPhytoplanktonSPSIIExcitation2018]
+
+## PSI MulticultivatorsMix
+
+## Prochlorococcus Growth Responses
+
+## Prochlorococcus Growth Rates, [O2], Light
+Ondrej: Density?
+Strain specific responses to O2 & chromatic light
+
+## Low Oxygen Zones & [O2] Dependent Enzyme Kd
+Y: depth
+X: [O2]
+geom_vline Enzyme Kd
+Table of unknown Enzyme Kd?
+Flv
+Cytochrome Oxidase
+AOX/PTOX
+Mixed Function Oxidases; ex. sterol synthesis, FA desaturases?
+RUBISCO
+
+Strain specific responses to O2 & chromatic light
+   (Maybe a vertical rainbow that attenuates differentially by wavelength
+
+## Small Genomes with ROS detoxification
+from Naaman
+
+
+
+## ROS Detoxification Enzymes
+```{r diffusion}
+enzyme_info= read.csv(file.path(data_in, "enzyme_info.csv", fsep = .Platform$file.sep)) %>%
+  select(-"EC_number")
+
+enzyme_info <- setNames(enzyme_info, c("Enzyme","Abbreviation", "Role", "Reaction Catalyzed"))
+
+knitr::kable(enzyme_info, "html") %>% kable_styling(.,font_size = 16,  full_width = TRUE)
+```
+
+
+```{r ros diffusion, include = FALSE}
+ProchloroDiamMin <- 0
+ProchloroDiamMax <- 0.8
+max_time = 1800
+
+Prochloroshape <- data.frame(x = c(0, max_time), y = c(0.6, 0.8))
+
+
+ros_diff <- tibble(us = c(1:max_time))
+
+ros_diff <- ros_diff %>% 
+  mutate(ROS = rep_len(c("H2O2", "1O2", "O2-"),length.out = max_time),
+  tau_us = rep_len(c(1/6.93E-4,1/2.1E-3,1.44),length.out = max_time),
+  diff_coef = rep_len(c(1.39E-3, 2.1E-3, 2.1E-3),length.out = max_time),
+  decay_s1 = 1*exp(us*-1/tau_us),
+  diffuse_um = jitter(sqrt(diff_coef*us),factor = 300))
+        
+
+DiffPlot <- ros_diff %>%
+  filter(ROS != "1O2") %>%
+  ggplot() +
+  geom_line(aes(x = us, y = diffuse_um)) +
+  geom_vline(aes(xintercept = tau_us), colour = "red") +
+  facet_wrap( ~ ROS, ncol = 2) +
+  theme_bw() +
+  theme(strip.text.x = element_text(size = 24)) + 
+  geom_hline(aes(yintercept = ProchloroDiamMax), colour = "green", linetype = "dashed") +
+  annotate(geom = "text", x = 850, y = 0.75, label = "Prochlorococcus", colour = "green") +
+  annotate(geom = "text", x = 800, y = 1.6, label = "The Ocean", colour = "blue")
+```
+
+
+## ROS Diffusion Distance before Destruction Varies
+```{r ros diffusion plot, fig.align = 'centre', out.width='70%', out.height='70%'}
+
+
+DiffPlot
+#plot_grid(H2O2DiffPlot, SingletDiffPlot, rel_widths = c(3, 3), ncol = 2)
+```
+
+
+## ROS Scavenging & Diffusion
+```{r ros scavenging, fig.align = 'centre', out.width='70%', out.height='70%'}
+knitr::include_graphics("figure_material/ROSscavenge.png")
+```
+
+## Current Work
+
+- [O2] differential response thresholds of *Prochlorococcus* & *Marine Synechococcus*
+- Light quality responses of *Prochlorococcus* & *Marine Synechococcus*
+- Kd for [O2] responses of enzymes
+- Comparative genomics & transcriptomics of [O2] responses of *Prochlorococcus*
+- ROS Homeostasis; do small cells need [O2] to produce ROS? Naaman Omar
+
+
+
+## Screening Capacities for ROS Detoxification - Approach
+
+- Chose two redundant protein probe sequences for each target ROS detoxification isoform; one diatom, one green
+- Make a database of predicted proteins from a genome (transcriptome) file  
+- Use probes to search for sequences in genome protein database  
+- Assemble matrix of unique isoform counts for each genome
+
+## Screening Capacities for ROS Detoxification - Results
+```{r ros detox capacities, fig.align = 'centre', out.width='70%', out.height='70%'}
+#knitr::include_graphics("figures/TaxaDotPlot.png")
+```
+
+## Transcriptomic vs. Genomic Data
+```{r transcript vs. genome, fig.align = 'centre', out.width='70%', out.height='70%'}
+#knitr::include_graphics("figures/OmesIsoPlot.png")
+```
+
+## ROS Detoxification Genes vs. Gene Models
+```{r ros vs gene models, fig.align = 'centre', out.width='70%', out.height='70%'}
+#knitr::include_graphics("figures/IsoTotGenesABPlot.png")
+```
+
+## ROS Detoxification Genes vs. Cell Diameter
+```{r ros detox vs cell diam, fig.align = 'centre', out.width='70%', out.height='70%'}
+#knitr::include_graphics("figures/SumDiamPlot.png")
+```
+
+## ROS Detoxification Gene Families vs. Cell Diameter
+```{r ros families vs cell diam, fig.align = 'centre', out.width='70%', out.height='70%'}
+#knitr::include_graphics("figures/IsoDiamPlot.png")
+```
+
+## Patterns of ROS Detoxification Gene Families vs. Cell Diameter
+
+- Ascorbate cycle genes patchily under-represented compared to the sum of genes encoding ROS detoxification (dotted lines).
+- Some phytoplankton > `r signif(10^0.4, 2)` µm encode catalase, but most lack catalase; 
+- Glutathione Reductases and Peroxidases encoded by >=1 gene, rising in phytoplankton greater than `r signif(10^0.4, 2)` µm .
+- Cell size correlates with increasing genome allocation to peroxidases (which include the glutathione dependent peroxidase sub-family).
+- Peroxiredoxins & Superoxide Dismutases are universally encoded in phytoplankton and rise with cell size.
+
+## ROS Scavenging & Diffusion
+```{r ros scavengingII, fig.align = 'centre', out.width='70%', out.height='70%'}
+knitr::include_graphics("figure_material/ROSscavenge.png")
+```
+
+
+## That's Funny
+```{r rbcL diatoms, fig.align = 'centre', out.width='70%', out.height='70%'}
+knitr::include_graphics(file.path("figure_material/ThatFunnyRbcL.png"))
+```
+
+## RbcL Crosslinks
+```{r rbcL crosslinks, fig.align = 'centre', out.width='70%', out.height='70%'}
+knitr::include_graphics(file.path("figure_material/RbcLCrosslinks.png"))
+```
+
+## RbcL & ROS
+```{r rbcL vs.DCF, fig.align = 'centre', out.width='70%', out.height='70%'}
+knitr::include_graphics(file.path("figure_material/RbcLROS.png"))
+```
+
+## Pennate Diffusion
+```{r pennate diffusion, fig.align = 'centre', out.width='70%', out.height='70%'}
+knitr::include_graphics("figure_material/PennateDiffusion.png")
+```
+
+## Pennate vs. Centric Diatoms
+-ROS Detoxification Gene Totals
+-Fewer in Pennates, particularly Pseudo-nitzschia & Nitzschia?
+```{r pennate vs centric, include = FALSE}
+merged_data <- read_rds(path = "data_in/merged_data.Rds")
+PennateCentric <- merged_data %>%
+  filter(taxa == "Diatom") %>%
+  mutate(form = as.factor(if_else(Genus %in%c("Fragilariopsis", "Pseudo-nitzschia", "Phaeodactylum", "Fistulifera","Nitzschia"), "pennate", "centric")))
+
+PennateCentricPlot <- PennateCentric %>%
+  ggplot() +
+  geom_boxplot(aes(x = form, y = isoform_sum_total), notch = TRUE) +
+  geom_point(aes(x = form, y = isoform_sum_total,colour = Genus),width = 0.2) +
+  theme_bw()
+
+PennateCentricFamilyPlot <- PennateCentric %>%
+  ggplot() +
+  geom_boxplot(aes(x = form, y = isoform_sum),notch = FALSE) +
+  geom_point(aes(x = form, y = isoform_sum,colour = Genus),width = 0.2) +
+  facet_wrap(vars(Enzyme_parent), ncol=6) +
+  theme_bw()
+
+ggsave(paste("PennateCentricPlot",".png",sep = ""), plot = PennateCentricPlot, device = NULL, path = figures,scale = 1, height= 9, width= 15, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("PennateCentricFamilyPlot",".png",sep = ""), plot = PennateCentricFamilyPlot, device = NULL, path = figures,scale = 1, height= 9, width= 15, units = c("in"),dpi = 300, limitsize = TRUE)
+```
+
+```{r pennate centric plot, message = FALSE, fig.align = 'centre', out.width='70%', out.height='70%'}
+PennateCentricPlot
+```
+
+## Pennate vs. Centric Diatoms II
+-ROS Detoxification Gene Families
+-Note fewer Peroxidase isoforms in Pennates?
+```{r pennate centric family plot, fig.align = 'centre', out.width='70%', out.height='70%'}
+PennateCentricFamilyPlot
+```
+
+## Bibliography
+
+
+
+
+
+

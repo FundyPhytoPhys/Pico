@@ -1,0 +1,353 @@
+---
+title: "Import Enzyme data"
+author: "Douglas A. Campbell, Max Berthold"
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    df_print: paged
+
+csl: plos-one.csl
+bibliography: ProchloroSynecho.bib
+
+---
+
+
+This .Rmd is for importing enzyme lists from KEGG and comparing them to data from BRENDA.
+
+
+```{r set project variables}
+Project <- "PICO"
+genus <- "Prochlorococcus"
+DataIn <- "enzyme_data"
+FileID <- ".json"
+# DataIn <- "MultiCulti"
+# PlotsPath <- "plots"
+# DataOut <- "data_out"
+# 
+# file_encode <- "UTF-8" 
+# delimiter <- ","
+# #this is brittle; better to figure out how to read all data starting at line that contains 'key'
+# header_rows <- 19
+```
+
+
+```{r load libraries} 
+# libraries; Note check actual dependencies
+library(tidyverse)
+library(lubridate)
+library(jsonlite)
+library(brendaDb)
+library(ggVennDiagram)
+library(kableExtra)
+#https://academic.oup.com/bioinformatics/article/33/18/2938/3884387
+library(UpSetR)
+#library(VennDiagram)
+#library(rjson)
+#library(googledrive)
+#library(googlesheets4)
+```
+
+
+
+```{r KEGG terms}
+prochloro_codes <- tibble(kegg_code = c("pma","pmm","pmt", "pmn", "pmi", "pmb", "pmc", "pmf", "pmg", "pmh", "pmj", "pme", "prc","prm"), genus = c("Prochlorococcus"), strain = c("CCMP1375","CCMP1986", "MIT9313",  "NATL2A", "MIT9312", "AS9601", "MIT9515","MIT9303", "MIT9301", "MIT9215", "MIT9211", "NATL1A", "MIT0604", "MIT0801"))
+
+cyanobium_codes <- tibble(kegg_code = c("cgc","cyi"), genus = c("Cyanobium"), strain = c("gracile", "NIES-981"))
+
+synechoc_codes <- tibble(kegg_code = c("syw","syx", "syh", "synw"), genus = c("Synechococcus"), strain = c("WH8102", "WH7803", "WH8109", "WH8103"))
+
+kegg_codes <- rbind(prochloro_codes, cyanobium_codes, synechoc_codes)
+```
+
+```{r import KEGG json}
+kegg_files <- list.files(path = file.path(DataIn, genus), pattern = FileID, full.names = TRUE)
+
+#enzyme_list <- fromJSON(file.path(DataIn, "pmt01000.json", fsep = .Platform$file.sep), flatten = "TRUE")
+
+taxa_enzyme_list <- kegg_files %>% 
+  map(~fromJSON(.,flatten = "TRUE"))
+```
+
+```{r tidy KEGG}
+#unlist to get to level where complete EC codes are part of column name...6
+#This might vary depending upon files imported, but I think it will be general b/c lower nesting levels catch multiple isoforms of EC codes
+
+taxa_enzyme_frame <- taxa_enzyme_list %>%
+  enframe() %>%
+  unnest_wider(col = value, names_repair = "universal", names_sep = NULL, simplify = TRUE) %>%
+  unnest(cols = c(children), names_repair = "universal") %>%
+  unnest(cols = c(children), names_repair = "universal") %>%
+  unnest(cols = c(children), names_repair = "universal") %>%
+  unnest(cols = c(children), names_repair = "universal")
+  
+
+colnames(taxa_enzyme_frame)
+
+#Extract EC codes from name...6; some rows have double EC codes; this may be problematic
+#extract KEGG code from source; 
+#filter rows where children = NULL b/c taxa does not contain that enzyme
+
+taxa_enzyme_frame <- taxa_enzyme_frame %>%
+  separate(name...6, into = c("enzyme", "EC"), sep = "\\[", remove = FALSE, convert = FALSE, extra = "merge", fill = "warn") %>%
+  mutate (EC = str_sub(EC,start = 4, end = -2)) %>%
+  select(-c(name...1)) %>%
+  rename(source = name...2) %>%
+  mutate(kegg_code = str_extract(source, pattern = "^.{3}")) %>%
+  select(kegg_code, EC, everything())
+
+         
+#not all BRENDA lines have EC numbers; filter non-numeric rows for now
+#must be a better way to do this
+ taxa_enzyme_frame <- taxa_enzyme_frame %>%
+   filter(str_detect(EC, pattern = "\\."))
+
+# enzyme_frame <- enzyme_frame %>%
+#   filter(str_detect(EC, pattern = "1")|str_detect(EC, pattern = "2")|str_detect(EC, pattern = "3")|str_detect(EC, pattern = "4")|str_detect(EC, pattern = "5")|str_detect(EC, pattern = "6")|str_detect(EC, pattern = "7"))
+
+#some BRENDA lines contain - in incomplete EC; filter out for now
+taxa_enzyme_frame <- taxa_enzyme_frame %>%
+  filter(!str_detect(EC, pattern = "-"))
+
+#some BRENDA lines contain double EC codes; filter out for now; appear to be proteins with two names enzymatic functions
+
+taxa_enzyme_frame <- taxa_enzyme_frame %>%
+  filter(!str_detect(EC, pattern = " "))
+
+#KEGG using 7.1.1.9 for cyt oxidase; replace with 1.9.3.1
+#https://www.genome.jp/dbget-bin/www_bget?ec:1.9.3.1
+taxa_enzyme_frame <- taxa_enzyme_frame %>%
+  mutate(EC = str_replace(EC, pattern = "7.1.1.9", replacement = "1.9.3.1"))
+
+
+```
+
+```{r import BRENDA}
+#direct download; slow, only first time
+#brenda.filepath <- DownloadBrenda()
+
+#brenda_df <- ReadBrenda(brenda.filepath)
+
+#already downloaded Brenda as .txt
+#brenda_df <- ReadBrenda(file.path(DataIn, "brenda_download.txt", fsep = .Platform$file.sep))
+
+#saveRDS(brenda_df, file = file.path(DataIn, "brenda.rds", fsep = .Platform$file.sep))
+
+brenda_df <- readRDS(file = file.path(DataIn, "brenda.rds", fsep = .Platform$file.sep))
+
+ShowFields(brenda_df)
+```
+
+```{r taxon_enzyme_frames}
+pma_enzyme_frame <- taxa_enzyme_frame %>%
+  filter(kegg_code == "pma")
+
+pmm_enzyme_frame <- taxa_enzyme_frame %>%
+  filter(kegg_code == "pmm")
+
+pmt_enzyme_frame <- taxa_enzyme_frame %>%
+  filter(kegg_code == "pmt")
+```
+
+```{r QueryBrenda}
+#only run if enzyme_frame has been updated
+#taxa_EC <- QueryBrenda(brenda_df, EC = taxa_enzyme_frame$EC, n.core = 0)
+
+pma_EC <- QueryBrenda(brenda_df, EC = pma_enzyme_frame$EC, n.core = 0)
+pmm_EC <- QueryBrenda(brenda_df, EC = pmm_enzyme_frame$EC, n.core = 0)
+pmt_EC <- QueryBrenda(brenda_df, EC = pmt_enzyme_frame$EC, n.core = 0)
+
+#saveRDS(taxa_EC, file = file.path(DataIn, "taxa_EC", fsep = .Platform$file.sep))
+
+saveRDS(pma_EC, file = file.path(DataIn, "pma_EC", fsep = .Platform$file.sep))
+
+saveRDS(pmm_EC, file = file.path(DataIn, "pmm_EC", fsep = .Platform$file.sep))
+
+saveRDS(pmt_EC, file = file.path(DataIn, "pmt_EC", fsep = .Platform$file.sep))
+```
+
+Problem with getting taxa codes onto Brenda data frames.
+Think about how to implement data handling with map or other.
+```{r substrate O2}
+taxa_EC <- readRDS(file = file.path(DataIn, "taxa_EC", fsep = .Platform$file.sep))
+
+pma_EC <- readRDS(file.path(DataIn, "pma_EC", fsep = .Platform$file.sep))
+pmm_EC <- readRDS(file.path(DataIn, "pmm_EC", fsep = .Platform$file.sep))
+pmt_EC <- readRDS(file.path(DataIn, "pmt_EC", fsep = .Platform$file.sep))
+
+taxa_km.value <- ExtractField(taxa_EC, field = "parameters$km.value")
+
+#not working with 'natural.substrate.product'; 'Error: Column `description` not found in `.data`'
+# taxa_natsub <- ExtractField(taxa_EC, field = "interactions$natural.substrate.product")
+
+#0 values
+#taxa_name <- ExtractField(taxa_EC, field = "nomenclature$recommended.name")
+
+taxa_CO2_km.value <- taxa_km.value %>%
+  filter(str_detect(fieldInfo, pattern = "CO2"))
+
+taxa_O2_km.value <- taxa_km.value %>%
+  filter(str_detect(fieldInfo, pattern = " O2"))
+
+#Think about how to access the desired content of taxa_EC; do I need to map over the list of ec_list, extracting [["interactions"]][["substrate.product"]]
+
+taxa_substrate <- taxa_EC %>% 
+  map(c("interactions","substrate.product")) %>%
+  unlist(recursive = FALSE) %>%
+  enframe() %>%
+  filter(str_detect(name, pattern = "substrate")) %>%
+  unnest(cols = value)  %>%
+  rename(EC = name, substrate = value) %>%
+  mutate(EC = str_replace(string = EC, pattern = ".substrate", replacement = ""))
+
+# taxa_name <- taxa_EC %>% 
+#   map(c("nomenclature","systematic.name")) %>%
+#   unlist(recursive = FALSE) %>%
+#   enframe() %>%
+#   rename(EC = name, systematic.name = value)
+
+         
+pma_substrate <- pma_EC %>% 
+  map(c("interactions","substrate.product")) %>%
+  unlist(recursive = FALSE) %>%
+  enframe() %>%
+  filter(str_detect(name, pattern = "substrate")) %>%
+  unnest(cols = value)  %>%
+  rename(EC = name, substrate = value) %>%
+  mutate(EC = str_replace(string = EC, pattern = ".substrate", replacement = "")) %>%
+  mutate(kegg_code = "pma")
+#mutate(EC = str_sub(EC, end = -11)) %>%
+
+pma_name <- pma_EC %>% 
+  map(c("nomenclature","systematic.name")) %>%
+  unlist(recursive = FALSE) %>%
+  enframe() %>%
+  rename(EC = name, systematic.name = value) %>%
+  mutate(kegg_code = "pma")
+
+pma_substrate <- left_join(pma_substrate, pma_name, by = c("EC", "kegg_code"))
+
+pmm_substrate <- pmm_EC %>% 
+  map(c("interactions","substrate.product")) %>%
+  unlist(recursive = FALSE) %>%
+  enframe() %>%
+  filter(str_detect(name, pattern = "substrate")) %>%
+  unnest(cols = value)  %>%
+  rename(EC = name, substrate = value) %>%
+  mutate(EC = str_replace(string = EC, pattern = ".substrate", replacement = ""))  %>%
+  mutate(kegg_code = "pmm")
+#mutate(EC = str_sub(EC, end = -11))
+
+pmm_name <- pmm_EC %>% 
+  map(c("nomenclature","systematic.name")) %>%
+  unlist(recursive = FALSE) %>%
+  enframe() %>%
+  rename(EC = name, systematic.name = value)  %>%
+  mutate(kegg_code = "pmm")
+
+pmm_substrate <- left_join(pmm_substrate, pmm_name, by = c("EC", "kegg_code"))
+
+pmt_substrate <- pmt_EC %>% 
+  map(c("interactions","substrate.product")) %>%
+  unlist(recursive = FALSE) %>%
+  enframe() %>%
+  filter(str_detect(name, pattern = "substrate")) %>%
+  unnest(cols = value)  %>%
+  rename(EC = name, substrate = value) %>%
+  mutate(EC = str_replace(string = EC, pattern = ".substrate", replacement = "")) %>%
+  mutate(kegg_code = "pmt")
+#mutate(EC = str_sub(EC, end = -11))
+
+pmt_name <- pmt_EC %>% 
+  map(c("nomenclature","systematic.name")) %>%
+  unlist(recursive = FALSE) %>%
+  enframe() %>%
+  rename(EC = name, systematic.name = value) %>%
+  mutate(kegg_code = "pmt")
+
+pmt_substrate <- left_join(pmt_substrate, pmt_name, by = c("EC", "kegg_code"))
+
+prochloro_substrate <- rbind(pma_substrate,pmm_substrate,pmt_substrate)
+
+saveRDS(prochloro_substrate, file = file.path(DataIn, "prochloro_substrate", fsep = .Platform$file.sep))
+
+#rework this to filter for HCO3- as well
+prochloro_CO2_substrate <- prochloro_substrate %>%
+  filter(str_detect(substrate, pattern = " CO2 "|" HCO3-")) %>%
+  distinct(EC, substrate, kegg_code, systematic.name,.keep_all = TRUE)
+
+prochloro_O2_substrate <- prochloro_substrate %>%
+  filter(str_detect(substrate, pattern = " O2 ")) %>%
+  distinct(EC, kegg_code, systematic.name, .keep_all = TRUE)
+
+
+O2_EC_counts <- prochloro_O2_substrate %>%
+  ggplot() +
+  geom_bar(aes(x = kegg_code)) +
+  theme_bw()
+
+O2_EC_counts
+
+#Not Working, not sure why
+# O2_EC_taxa <- list(pmm = as.character(prochloro_O2_substrate %>%
+#   filter(kegg_code == "pmm") %>%
+#   select(EC)),
+#   pma = as.character(prochloro_O2_substrate %>%
+#   filter(kegg_code == "pma") %>%
+#   select(EC)) ,
+#   pmt = as.character(prochloro_O2_substrate %>%
+#   filter(kegg_code == "pmt") %>%
+#   select(EC)))
+# 
+# ggVennDiagram(O2_EC)
+
+# names_prefix = "EC",
+```
+
+```{r strain intersections}
+prochloro_O2_substrate <- left_join(prochloro_O2_substrate, prochloro_codes, by = "kegg_code") %>%
+  select(genus, strain, everything())
+
+prochloro_O2_name_wide <- prochloro_O2_substrate %>%
+  pivot_wider(id_cols = c(kegg_code, strain), names_from = systematic.name,values_from = substrate)
+prochloro_O2_name_wide[is.na(prochloro_O2_name_wide)] <- 0
+
+prochloro_O2_name_wide[1:3,3:length(prochloro_O2_name_wide)] = if_else(prochloro_O2_name_wide[1:3,3:length(prochloro_O2_name_wide)] == 0, 0, 1)
+
+
+prochloro_O2_name_wide <- prochloro_O2_name_wide %>%
+  type_convert() %>%
+  mutate(kegg_code = as.factor(kegg_code)) %>%
+  as.data.frame()
+
+
+#UpSetR
+#https://cran.r-project.org/web/packages/UpSetR/vignettes/attribute.plots.html
+
+upset(prochloro_O2_name_wide, nsets = length(prochloro_O2_name_wide),  order.by = "degree",keep.order = TRUE)
+
+kable(prochloro_O2_name_wide)
+
+strains_EC_O2 <- prochloro_O2_substrate %>%
+  pivot_wider(id_cols = c(EC), names_from = c(strain, kegg_code),values_from = systematic.name)
+
+strains_EC_O2_counts <- strains_EC_O2
+
+strains_EC_O2_counts[is.na(strains_EC_O2_counts)] <- 0
+
+strains_EC_O2_counts[1:nrow(strains_EC_O2_counts),2:length(strains_EC_O2_counts)] = if_else(strains_EC_O2_counts[1:nrow(strains_EC_O2_counts),2:length(strains_EC_O2_counts)] == 0, 0, 1)
+
+
+prochloro_O2_name_wide <- prochloro_O2_name_wide %>%
+  type_convert() %>%
+  mutate(kegg_code = as.factor(kegg_code)) %>%
+  as.data.frame()
+
+kable(strains_EC_O2)
+
+saveRDS(strains_EC_O2, file = file.path(DataIn, paste(genus, "strains_EC_O2", sep = "_"), fsep = .Platform$file.sep))
+
+```
+
+-plot KM ranges as vertical bars on log scale horizontal O2 axis; plot representative O2 depth profile
+-mirror for light EK/KM values for photosynthesis, DNA photolyase etc.
+-figure out how to do rainbow attenuation for light
