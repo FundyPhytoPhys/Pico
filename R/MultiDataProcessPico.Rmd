@@ -315,7 +315,7 @@ nest(tubedata = c(time, abs_time, ToD, Day, Actinic_par, OD680, OD720, deltaOD, 
   mutate(lognormOD720_GompFlag = if_else(lognormOD720_Gompertz != "NULL", 1, 0),
          lognormOD720_GompLag = map(.x = lognormOD720_Gompertz_tidied, ~pluck(., 2, 1)),
          lognormOD720_TimetoMax = map(.x = lognormOD720_Gompertz_predict, ~.$time[which.max(.$`.fitted`)]),
-         lognormOD720_GompLagFlag = if_else(as.numeric(lognormOD720_GompLag) <= as.numeric(lognormOD720_TimetoMax), 1, 0)
+         lognormOD720_GompLagFlag = if_else(as.numeric(lognormOD720_GompLag) <= as.numeric(lognormOD720_TimetoMax), 1, 0),
   ) %>%
  mutate(lognormdeltaOD_Gompertz = map(tubedata, possibly(~nlsLM(lognormdeltaOD ~ ModGompertzEqn(x = time, GLag, Gmax, Gmu),
                                     data = .x,
@@ -337,6 +337,9 @@ nest(tubedata = c(time, abs_time, ToD, Day, Actinic_par, OD680, OD720, deltaOD, 
            GrowthAmpOD720Flag = if_else(GrowthAmpOD720 >= GrowthFlagValue, 1, 0)
            )
 
+
+#failed attempt with map2
+# test = map2(.x = lognormOD720_Gompertz_tidied, .y = lognormOD720_Gompertz_predict, ~if_else(as.numeric(~pluck(.x, 2, 1)) <= as.numeric(~.y$time[which.max(.$`.fitted`)]), 1, 0))
 ```
 
 
